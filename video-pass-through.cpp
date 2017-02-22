@@ -1,4 +1,4 @@
-// VideoCopy
+// video-pass-through
 // this peace of code grabs a video stream, shows it in an preview window and
 // also streams the unmodified stream to an v4l2-loopback device.
 // heavily based on the following examples:

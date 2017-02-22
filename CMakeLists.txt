@@ -15,6 +15,12 @@ INCLUDE_DIRECTORIES(
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+# minimal version
+add_executable( minimal minimal.cpp )
+target_link_libraries( minimal ${OpenCV_LIBS} )
+target_link_libraries( minimal ${Boost_LIBRARIES} )
+
+# all features
 add_executable( video-pass-through video-pass-through.cpp )
 target_link_libraries( video-pass-through ${OpenCV_LIBS} )
 target_link_libraries( video-pass-through ${Boost_LIBRARIES} )
