@@ -2,6 +2,9 @@
 minimal
 video-pass-through
 
+# test things
+my_image.png
+
 # cmake
 CMakeCache.txt
 CMakeFiles

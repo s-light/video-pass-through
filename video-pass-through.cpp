@@ -8,6 +8,8 @@
 
 
 #include <stdio.h>
+#include <string>
+#include <cstring>
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/videoio.hpp>
@@ -44,7 +46,7 @@ bool saveFrameAsPNG(cv::Mat frame, std::string filename=NULL) {
         imwrite(filename, frame, compression_params);
     }
     catch (cv::Exception& ex) {
-        fprintf(stderr, "Exception converting image to PNG format: %s\n", ex.what());
+        fprintf(stderr, "Exception converting image to PNG format: %s \n", ex.what());
         return 0;
     }
     // fprintf(stdout, "Saved PNG file as %s.\n", filename);
@@ -76,6 +78,18 @@ int getV4lDeviceID(std::string pathToDevice) {
     return id;
 }
 
+std::string decode_fourcc(int value) {
+    // http://answers.opencv.org/question/81707/cv_cap_prop_fourcc-not-returning-video-codec-on-some-videos/
+    char vcodec[] = {
+        (char)(value & 0XFF),
+        (char)((value & 0XFF00) >> 8),
+        (char)((value & 0XFF0000) >> 16),
+        (char)((value & 0XFF000000) >> 24),
+        0
+    };
+    return vcodec;
+}
+
 int openV4l2Output(std::string device, int width, int height) {
     int v4l2out = open(device.c_str(), O_WRONLY);
     if(v4l2out < 0) {
@@ -93,7 +107,11 @@ int openV4l2Output(std::string device, int width, int height) {
         }
         v.fmt.pix.width = width;
         v.fmt.pix.height = height;
-        v.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB24;
+        // V4L2_PIX_FMT_RGB24
+        // V4L2_PIX_FMT_GREY
+        // V4L2_PIX_FMT_YUYV
+        // V4L2_PIX_FMT_YUV420
+        v.fmt.pix.pixelformat = V4L2_PIX_FMT_YUV420;
         int vidsendsiz = width * height * 3;
         v.fmt.pix.sizeimage = vidsendsiz;
         t = ioctl(v4l2out, VIDIOC_S_FMT, &v);
@@ -111,7 +129,9 @@ int main(int argc, char** argv ) {
         // return -1;
     }
 
+    // input image
     cv::Mat src;
+    // output image
     cv::Mat out;
 
     // auto device_src = "/dev/video19";
@@ -120,11 +140,13 @@ int main(int argc, char** argv ) {
         device_src = argv[1];
     }
     std::cout << "device_src = " << device_src << std::endl;
-    auto id = getV4lDeviceID(device_src);
-    std::cout << "id = " << id << std::endl;
 
+    // auto id = getV4lDeviceID(device_src);
+    // std::cout << "id = " << id << std::endl;
     // init video capture with V4L backend.
-    cv::VideoCapture cap(id + cv::CAP_V4L);
+    // cv::VideoCapture cap(id + cv::CAP_V4L);
+
+    cv::VideoCapture cap(device_src, cv::CAP_V4L);
 
     // check if we succeeded
     if (!cap.isOpened()) {
@@ -133,10 +155,16 @@ int main(int argc, char** argv ) {
     }
 
     // set capture parameters
+    // cap.set(cv::CAP_PROP_FOURCC, cv::CV_FOURCC('M', 'J', 'P', 'G'));
+    // cap.set(cv::CAP_PROP_FOURCC, cv::CV_FOURCC('H', '2', '6', '4'));
+    // cap.set(cv::CAP_PROP_FOURCC, cv::CV_FOURCC('Y', 'U', 'Y', 'V'));
     cap.set(cv::CAP_PROP_FRAME_WIDTH, 1920);
     cap.set(cv::CAP_PROP_FRAME_HEIGHT, 1080);
     std::cout << "cv::CAP_PROP_FPS = " << cap.get(cv::CAP_PROP_FPS) << std::endl;
+    std::cout << "cv::CAP_PROP_POS_MSEC = " << cap.get(cv::CAP_PROP_POS_MSEC) << std::endl;
     std::cout << "cv::CAP_PROP_FOURCC = " << cap.get(cv::CAP_PROP_FOURCC) << std::endl;
+    std::cout << "cv::CAP_PROP_FOURCC = " << decode_fourcc(cap.get(cv::CAP_PROP_FOURCC)) << std::endl;
+
     // get one frame from camera to know frame size and type
     cap >> src;
     // init out array
@@ -166,22 +194,39 @@ int main(int argc, char** argv ) {
     );
 
 
-    cv::namedWindow("src", cv::WINDOW_AUTOSIZE );
+    // cv::namedWindow("src", cv::WINDOW_AUTOSIZE );
+    cv::namedWindow("src", cv::WINDOW_NORMAL | cv::WINDOW_KEEPRATIO );
 
     // print help / info
     // std::cout << "Writing videofile: " << filename << std::endl
     std::cout << "Press ESC to terminate." << std::endl;
+    std::cout << "Press 'space' to show CAP_PROP_POS_MSEC" << std::endl;
+    // std::cout << "Press 'o' to show camera driver option dialog" << std::endl;
     std::cout << "Press 's' to save current frame as png image." << std::endl;
     // loop
     while (1) {
+        // prepared for multicam support:
+        // http://docs.opencv.org/3.2.0/d8/dfe/classcv_1_1VideoCapture.html#ae38c2a053d39d6b20c9c649e08ff0146
+        // first grab all frames
+        bool grabSucceeded = true;
+        grabSucceeded = cap.grab();
+        // grabSucceeded = grabSucceeded && cap2.grab();
         // check if we succeeded
-        if (!cap.read(src)) {
+        if (!grabSucceeded) {
             std::cerr << "ERROR! blank frame grabbed\n";
             break;
         }
+        // then use the slower retrieve method to get (and decode) the actual image.
+        cap.retrieve(src);
 
         // correct color order for output.
-        cv::cvtColor(src, out, CV_BGR2RGB);
+        cv::cvtColor(src, out, cv::COLOR_BGR2YUV_I420);
+        // http://docs.opencv.org/3.2.0/de/d25/imgproc_color_conversions.html
+        // http://docs.opencv.org/3.2.0/d7/d1b/group__imgproc__misc.html#ga4e0972be5de079fed4e3a10e24ef5ef0
+        // COLOR_BGR2RGB
+        // COLOR_BGR2YUV
+        // COLOR_BGR2GRAY
+        // COLOR_BGR2YUV_I420
 
         // write frame to loopback
         int size = out.total() * out.elemSize();
@@ -192,14 +237,37 @@ int main(int argc, char** argv ) {
             return 1;
         }
 
+        // would be good to bring this into its own thread.
         // show live and wait for a key with timeout long enough to show images
         cv::imshow("src", src);
-
-        // handle keys
-        switch (cv::waitKey(5)) {
+        // give image-update time and handle keys
+        switch (cv::waitKey(1)) {
             case 's': {
                 saveFrameAsPNG(src, "my_image.png");
             }; break;
+            case ' ': {
+
+                // seems to always return 0
+                // http://www.answers.opencv.org/question/100052/opencv-videocapturegetcv_cap_prop_pos_msec-returns-0/
+                // but should not?!
+                // related lines in code:
+                // cap_v4l.cpp
+                // https://github.com/opencv/opencv/blob/master/modules/videoio/src/cap_v4l.cpp#L159
+                // https://github.com/opencv/opencv/blob/master/modules/videoio/src/cap_v4l.cpp#L1651
+                // cap_libv4l.cpp
+                // https://github.com/opencv/opencv/blob/master/modules/videoio/src/cap_libv4l.cpp#L194
+                // https://github.com/opencv/opencv/blob/master/modules/videoio/src/cap_libv4l.cpp#L1414
+                std::cout << "cv::CAP_PROP_POS_MSEC = " << cap.get(cv::CAP_PROP_POS_MSEC) << std::endl;
+
+                // not supported:
+                // std::cout << "cv::CAP_PROP_POS_FRAMES = " << cap.get(cv::CAP_PROP_POS_FRAMES) << std::endl;
+
+            }; break;
+            // not supported
+            // case 'o': {
+            //     //show driver settings window
+            //     // cap.set(cv::CAP_PROP_SETTINGS, -1);
+            // }; break;
             // escape key
             case 27: {
                 return 0;
