@@ -122,11 +122,39 @@ int openV4l2Output(std::string device, int width, int height) {
     return v4l2out;
 }
 
+
+
+
+const std::string cmd_keys =
+"{help h usage ?     |              | print this message   }"
+"{@input             | /dev/video20 | camera input         }"
+"{@output            | /dev/video40 | v4l2-loopback output }"
+"{uv updatepreview   | true         | update preview window }"
+;
+
+
 int main(int argc, char** argv ) {
-    if ( argc < 2 )
+    // switch to CommandlineParser
+    // http://docs.opencv.org/3.2.0/d0/d2e/classcv_1_1CommandLineParser.html
+    cv::CommandLineParser parser(argc, argv, cmd_keys);
+    parser.about("video-pass-through example v0.1.0");
+    parser.printMessage();
+    // if (parser.has("help")) {
+    //     parser.printMessage();
+    //     return 0;
+    // }
+    if (!parser.check()) {
+        parser.printErrors();
+        return 0;
+    }
+    std::cout << std::endl << std::endl;
+
+    auto updatepreview = parser.get<bool>("updatepreview");
+
+    if (parser.has("help"))
     {
-        printf("usage: /dev/video20 /dev/video40\n");
-        // return -1;
+        parser.printMessage();
+        return 0;
     }
 
     // input image
@@ -134,23 +162,13 @@ int main(int argc, char** argv ) {
     // output image
     cv::Mat out;
 
-    // auto device_src = "/dev/video19";
-    auto device_src = "/dev/video20";
-    if (argc >= 2) {
-        device_src = argv[1];
-    }
+    auto device_src = parser.get<std::string>("@input");
     std::cout << "device_src = " << device_src << std::endl;
-
-    // auto id = getV4lDeviceID(device_src);
-    // std::cout << "id = " << id << std::endl;
-    // init video capture with V4L backend.
-    // cv::VideoCapture cap(id + cv::CAP_V4L);
-
     cv::VideoCapture cap(device_src, cv::CAP_V4L);
 
     // check if we succeeded
     if (!cap.isOpened()) {
-        std::cerr << "ERROR! Unable to open camera\n";
+        std::cerr << "ERROR! Unable to open input camera\n";
         return -1;
     }
 
@@ -180,10 +198,7 @@ int main(int argc, char** argv ) {
     // std::cout << "src_size" << src_size << std::endl;
 
     // init output stream
-    auto device_out = "/dev/video40";
-    if (argc >= 3) {
-        device_out = argv[2];
-    }
+    auto device_out = parser.get<std::string>("@output");
     int width = src.cols;
     int height = src.rows;
     // int vidsendsiz = width * height * 3;
@@ -196,13 +211,17 @@ int main(int argc, char** argv ) {
 
     // cv::namedWindow("src", cv::WINDOW_AUTOSIZE );
     cv::namedWindow("src", cv::WINDOW_NORMAL | cv::WINDOW_KEEPRATIO );
+    // show initial frame
+    cv::imshow("src", src);
 
-    // print help / info
+    // print keyboard shortcuts
     // std::cout << "Writing videofile: " << filename << std::endl
     std::cout << "Press ESC to terminate." << std::endl;
     std::cout << "Press 'space' to show CAP_PROP_POS_MSEC" << std::endl;
     // std::cout << "Press 'o' to show camera driver option dialog" << std::endl;
     std::cout << "Press 's' to save current frame as png image." << std::endl;
+    std::cout << "Press 'u' to toggle updatepreview." << std::endl;
+
     // loop
     while (1) {
         // prepared for multicam support:
@@ -237,17 +256,23 @@ int main(int argc, char** argv ) {
             return 1;
         }
 
-        // would be good to bring this into its own thread.
-        // show live and wait for a key with timeout long enough to show images
-        cv::imshow("src", src);
+        // TODO: optional scaled down version
+        // TODO: optional mouse colorpicker
+        if (updatepreview) {
+            // show input stream
+            cv::imshow("src", src);
+        }
+
+
         // give image-update time and handle keys
         switch (cv::waitKey(1)) {
             case 's': {
+                // saveFrameAsPNG(src);
                 saveFrameAsPNG(src, "my_image.png");
             }; break;
             case ' ': {
 
-                // seems to always return 0
+                // CAP_PROP_POS_MSEC seems to always return 0
                 // http://www.answers.opencv.org/question/100052/opencv-videocapturegetcv_cap_prop_pos_msec-returns-0/
                 // but should not?!
                 // related lines in code:
@@ -262,6 +287,11 @@ int main(int argc, char** argv ) {
                 // not supported:
                 // std::cout << "cv::CAP_PROP_POS_FRAMES = " << cap.get(cv::CAP_PROP_POS_FRAMES) << std::endl;
 
+            }; break;
+            case 'u': {
+                // toggle updatepreview
+                updatepreview = !updatepreview;
+                std::cout << "updatepreview: " << updatepreview << std::endl;
             }; break;
             // not supported
             // case 'o': {
